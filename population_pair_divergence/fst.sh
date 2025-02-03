@@ -6,7 +6,7 @@ DIR="/QRISdata/Q6656/chapter_III/population_divergence"
 gzvcf="/QRISdata/Q6656/sf8_no_variants_noD1_reheader_final_nsng.vcf.gz"
 
 # Read population file containing pop name, P1 samples, P2 samples
-POP_FILE="/Users/kathleenmclay/ChIII_inversions_divergence_with_gene_flow/population_pair_divergence/pops.txt"
+POP_FILE="/home/uqkmcla4/ChIII_inversions_divergence_with_gene_flow/population_pair_divergence/pops.txt"
 
 # Loop through each population in the first column of the file
 while IFS=',' read -r pop P1 P2; do

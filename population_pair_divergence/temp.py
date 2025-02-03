@@ -3,10 +3,10 @@ import glob
 
 # Define directory and output file
 directory = "/QRISdata/Q6656/chapter_III/population_divergence"
-output_file = "/QRISdata/Q6656/chapter_III/population_divergence/dxy_all.txt"
+output_file = "/QRISdata/Q6656/chapter_III/population_divergence/fst_all.txt"
 
 # Find all .txt files in the directory
-file_list = sorted(glob.glob(os.path.join(directory, "*.txt")))
+file_list = sorted(glob.glob(os.path.join(directory, "*weir.fst")))
 
 if not file_list:
     print("No .txt files found in the directory.")
@@ -28,7 +28,7 @@ import pandas as pd
 
 # Define file paths
 csv_file = "/QRISdata/Q6656/chapter_III/population_divergence/LD_all_data.csv"  # Update with your actual CSV file path
-filter_file = "/QRISdata/Q6656/chapter_III/population_divergence/popsLDfil.txt"  # Update with your actual text file path
+filter_file = "/home/uqkmcla4/ChIII_inversions_divergence_with_gene_flow/population_pair_divergence/popsLDfil.txt"  # Update with your actual text file path
 output_file = "/QRISdata/Q6656/chapter_III/population_divergence/LD_all.csv"
 
 # Load the filter list from the text file

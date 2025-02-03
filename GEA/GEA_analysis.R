@@ -15,19 +15,19 @@ inv_dat <- read.csv("inversion_list.csv", h=T) # Inversions
 inv_regions <- read.csv("inversion_list_no_overlap.csv", h=T) # inversions regions with overlap removed
 
 #adjust the SNP positions so the results can be plotted consecutively for all scaffolds in one plot
-# snps <- subset(gea_dat, COVARIABLE == 1)[, c("position", "scaffold")] #get a list of SNP positions 
-# bp <- snps$position[snps$scaffold == "scaffold_1"] #make a new variable with all the positions from scaffold 1
-# mid <- 0+max(bp)/2 #create a value that is the midpoint of scaffold 1
-# scaffolds <- unique(gea_dat$scaffold)
-# for (i in scaffolds[-1]) {
-#   print(i)
-#   max.now <- max(bp)
-#   mid <- c(mid, max.now+max(snps$position[snps$scaffold == i])/2)
-#   bp <- c(bp, (snps$position[snps$scaffold == i] + max.now))
-#   inv_dat$con_start[inv_dat$scaffold == i] = inv_dat$start[inv_dat$scaffold == i] + max.now
-#   inv_dat$con_end[inv_dat$scaffold == i] = inv_dat$end[inv_dat$scaffold == i] + max.now
-# }
-# snps$con_pos <- bp
+snps <- subset(gea_dat, COVARIABLE == 1)[, c("position", "scaffold")] #get a list of SNP positions 
+bp <- snps$position[snps$scaffold == "scaffold_1"] #make a new variable with all the positions from scaffold 1
+mid <- 0+max(bp)/2 #create a value that is the midpoint of scaffold 1
+scaffolds <- unique(gea_dat$scaffold)
+for (i in scaffolds[-1]) {
+  print(i)
+  max.now <- max(bp)
+  mid <- c(mid, max.now+max(snps$position[snps$scaffold == i])/2)
+  bp <- c(bp, (snps$position[snps$scaffold == i] + max.now))
+  inv_dat$con_start[inv_dat$scaffold == i] = inv_dat$start[inv_dat$scaffold == i] + max.now
+  inv_dat$con_end[inv_dat$scaffold == i] = inv_dat$end[inv_dat$scaffold == i] + max.now
+}
+snps$con_pos <- bp
 
 #plot GEA results for each co-variable + chromosome
 pdf("BayPass_plot.pdf", width=12, height=2)
@@ -64,8 +64,8 @@ for (i in unique(gea_dat$COVARIABLE)) {
   assign(paste0("gea_sig_", as.character(i)), gea_sig)
 }
 
-# Identify significant SNPs that are within inversions (PC1 837/3516 ~24% were within inversions, inversions are ~18% of genome length)
-######### needs addition loop to automate for each co-variable 
+# Identify significant SNPs that are within inversions
+
 filtered_gea_sig3 <- data.frame()
 
 for (i in unique(gea_sig_3$scaffold)) {
@@ -79,7 +79,6 @@ for (i in unique(gea_sig_3$scaffold)) {
 }
 
 #total SNPs within inversions 
-######### needs addition loop to automate for each co-variable 
 cov1_total_inv_SNPs <- data.frame()
 
 for (i in unique(gea_dat_cov1$scaffold)) {

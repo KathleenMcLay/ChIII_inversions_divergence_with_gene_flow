@@ -1,41 +1,85 @@
+#!/bin/bash -l
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=12
+#SBATCH --mem=180GB
+#SBATCH --job-name=Fun_enrichment
+#SBATCH --time=24:00:00
+#SBATCH --partition=general
+#SBATCH --account=a_ortiz_barrientos_coe
+#SBATCH --output=/home/uqkmcla4/scripts/Fun_enrichment.txt
+
+# Load the SAMtools module (used for processing BAM files)
 module load samtools
 
 ### Functional Enrichment Analysis ###
 
-BAS_DIR= "/QRISdata/Q6656/chapter_III/fun_enrichment/"
+# Set base directory for storing intermediate and output files
+BAS_DIR="/QRISdata/Q6656/chapter_III/functional_enrichment/"
 
-# per population pair (+coastal?) to capture each pops unique set of inversions. run goatools for all annotations 
+### Step 1: Create the study file of genes that are present in the inversions ###
 
-# 1_subset the list of gene_IDs & GO terms to just the ones that are present in the inversion
+# Define input/output file paths for Step 1
+BAM="$BAS_DIR/mapped.bam"                   # BAM file with transcript alignments
+BED="$BAS_DIR/inversions.bed"              # BED file listing inversion regions
+ANNOTATION="$BAS_DIR/annotated_without_contam_gene_ontology_terms.tsv" # GO annotation file
+GENE_ID_LIST="$BAS_DIR/gene_ids.txt"       # Intermediate list of transcript IDs
+MATCHED_GENES="$BAS_DIR/study.txt"         # Final study gene list (with biological_process GO terms)
 
-# convert .bam to .sam
-samtools view -h "$BAS_DIR"/mapped.bam > "$BAS_DIR"/mapped.sam
+# Extract reads from BAM that overlap inversion regions
+echo "Extracting transcript IDs from BAM overlapping inversions..."
+samtools view -L "$BED" "$BAM" | \
+    awk '{print $1}' | sort | uniq > "$GENE_ID_LIST"
 
-# create a list of unique gene names and associated GO terms for the whole genome (population.txt file for goatools)
-awk 'BEGIN {FS="\t"; OFS="\t"} {go[$1] = (go[$1] ? go[$1] ";" $2 : $2)} END {for (gene in go) print gene, go[gene]}' "$BAS_DIR"/annotated_without_contam_gene_ontology_terms.tsv > "$BAS_DIR"/gene_to_go_terms.tsv
+# Match the transcript IDs to GO annotations and extract only biological_process-related genes
+echo "Matching GO annotations and extracting gene names..."
+awk 'NR==FNR { ids[$1]; next } {
+    split($1, parts, "|");
+    if (parts[3] in ids && $4 == "biological_process") print parts[1];
+}' "$GENE_ID_LIST" "$ANNOTATION" | sort | uniq > "$MATCHED_GENES"
 
-for file in ${directory}/sample_lists/*; do
-    echo "current file is ${file}"
-    filename=$(basename ${file} _samples.txt)
+# Notify completion of study file creation
+echo "Done. Output written to $MATCHED_GENES"
 
-    # seperate the isoforms present in inversions
-    samtools view -h -b -L ${filename}_regions.bed "$BAS_DIR"/mapped.sam > "$BAS_DIR"/${filename}_mapped_invonly.sam
+### Step 2: Create the population and association files for all genes in the genome ###
 
-    #subset the list of go terms to just the ones that are present in the inversion
-    #extract the gene names from the output.sam file
-    awk '{print $3}' "$BAS_DIR"/${filename}_mapped_invonly.sam | sort | uniq > "$BAS_DIR"/${filename}_gene_names.txt
+# Input GO annotation file for the full genome
+INPUT="$BAS_DIR/annotated_without_contam_gene_ontology_terms.tsv"
 
-    #extract the row from the .tsv file that contains the gene names
-    grep -f "$BAS_DIR"/${filename}_gene_names.txt "$BAS_DIR"/annotated_without_contam_gene_ontology_terms.tsv > "$BAS_DIR"/${filename}_go_terms_inversion.tsv
+# Output files for GOATOOLS
+POPULATION_FILE="$BAS_DIR/population.txt"      # List of all genes with biological_process GO terms
+ASSOCIATION_FILE="$BAS_DIR/association.txt"    # Gene-to-GO term mappings (biological_process only)
 
-    # Create a file that contains only unique gene names (study file for goatools) - study file is a list of genes that are present in the inversions ie. a subset of the full gene list across the whole genome
-    awk '{print $1}' "$BAS_DIR"/${filename}_go_terms_inversion.tsv | sort | uniq > "$BAS_DIR"/${filename}_study.txt
+# Parse the annotation file to build the population and association files
+awk '
+BEGIN {
+    FS="\t"; OFS="\t"
+}
+# Only keep rows with the biological_process category
+$4 == "biological Process" {
+    split($1, a, "|")
+    gene = a[1]
+    go = $2
+    if (gene != "" && go ~ /^GO:/)
+        map[gene] = (map[gene] ? map[gene] ";" go : go)
+}
+# Write out the gene and associated GO terms
+END {
+    for (gene in map) {
+        print gene > "'"$POPULATION_FILE"'"
+        print gene, map[gene] > "'"$ASSOCIATION_FILE"'"
+    }
+}
+' "$INPUT"
 
-    #create a mapping of unique gene names to their associated GO terms. Output the final file with unique gene names in column 1 and associated GO terms in column 2 (association file for goatools)
-    awk 'BEGIN {FS="\t"; OFS="\t"} {go[$1] = (go[$1] ? go[$1] ";" $2 : $2)} END {for (gene in go) print gene, go[gene]}' "$BAS_DIR"/${filename}_go_terms_inversion.tsv > "$BAS_DIR"/${filename}_gene_to_go_terms.tsv
-    cat "$BAS_DIR"/gene_to_go_terms.tsv >> "$BAS_DIR"/association.txt
+### Step 3: Run GOATOOLS to identify enriched GO terms in inversions ###
 
-    # 2_run GOAtools to identify GO terms that are enriched within inversions
-    # run GOAtools
-    python3 /home/uqkmcla4/goatools/scripts/find_enrichment.py data/study.txt data/population.txt data/association.txt --pval=0.05 --method=fdr_bh --pval_field=fdr_bh --obo /home/uqkmcla4/go-basic.obo --outfile= ${filename}_goatools_out.xlsx 
-done
+# Run the GOATOOLS enrichment test
+# python3 /home/uqkmcla4/goatools/scripts/find_enrichment.py \
+# "$BAS_DIR"/study.txt \                        # Study set: genes in inversions
+# "$BAS_DIR"/population.txt \                  # Background gene set
+# "$BAS_DIR"/association.txt \                 # GO term associations
+# --obo /home/uqkmcla4/go-basic.obo \          # GO term definitions file
+# --outfile "$BAS_DIR"/go_enrichment_results.xlsx \  # Output Excel file
+# --pval 0.05 \                                 # P-value significance threshold
+# --method fdr_bh                               # Multiple testing correction method (FDR Benjamini-Hochberg)

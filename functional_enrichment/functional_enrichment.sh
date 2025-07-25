@@ -1,10 +1,10 @@
 #!/bin/bash -l
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=180GB
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=80GB
 #SBATCH --job-name=Fun_enrichment
-#SBATCH --time=24:00:00
+#SBATCH --time=3:00:00
 #SBATCH --partition=general
 #SBATCH --account=a_ortiz_barrientos_coe
 #SBATCH --output=/home/uqkmcla4/scripts/Fun_enrichment.txt
@@ -15,71 +15,123 @@ module load samtools
 ### Functional Enrichment Analysis ###
 
 # Set base directory for storing intermediate and output files
-BAS_DIR="/QRISdata/Q6656/chapter_III/functional_enrichment/"
+BAS_DIR="/QRISdata/Q6656/chapter_III/functional_enrichment"
 
-### Step 1: Create the study file of genes that are present in the inversions ###
-
-# Define input/output file paths for Step 1
-BAM="$BAS_DIR/mapped.bam"                   # BAM file with transcript alignments
-BED="$BAS_DIR/inversions.bed"              # BED file listing inversion regions
+# Define input/output file paths
+BAM="$BAS_DIR/mapped.bam"  # BAM file with transcript alignments
 ANNOTATION="$BAS_DIR/annotated_without_contam_gene_ontology_terms.tsv" # GO annotation file
-GENE_ID_LIST="$BAS_DIR/gene_ids.txt"       # Intermediate list of transcript IDs
-MATCHED_GENES="$BAS_DIR/study.txt"         # Final study gene list (with biological_process GO terms)
 
-# Extract reads from BAM that overlap inversion regions
-echo "Extracting transcript IDs from BAM overlapping inversions..."
-samtools view -L "$BED" "$BAM" | \
-    awk '{print $1}' | sort | uniq > "$GENE_ID_LIST"
+# Output files
+POPULATION_FILE="$BAS_DIR/population.txt"       # All genes with GO annotations
+ASSOCIATION_FILE="$BAS_DIR/association.txt"  # Gene-to-GO associations
+OBO="/home/uqkmcla4/go-basic.obo"               # GO ontology file
 
-# Match the transcript IDs to GO annotations and extract only biological_process-related genes
-echo "Matching GO annotations and extracting gene names..."
-awk 'NR==FNR { ids[$1]; next } {
-    split($1, parts, "|");
-    if (parts[3] in ids && $4 == "biological_process") print parts[1];
-}' "$GENE_ID_LIST" "$ANNOTATION" | sort | uniq > "$MATCHED_GENES"
+### Step 1: Create the population and association files from annotation (all GO categories)
 
-# Notify completion of study file creation
-echo "Done. Output written to $MATCHED_GENES"
+# awk '
+# BEGIN {
+#     FS = "\t"; OFS = "\t"
+# }
+# {
+#     split($1, a, "|")
+#     split(a[1], b, ".")
+#     gene = b[1] "." b[2]  # Keep only first two parts
+#     go = $2
 
-### Step 2: Create the population and association files for all genes in the genome ###
+#     if (gene != "" && go ~ /^GO:/) {
+#         key = gene "_" go
+#         if (!(key in seen)) {
+#             go_terms[gene] = (gene in go_terms ? go_terms[gene] ";" go : go)
+#             seen[key] = 1
+#         }
+#     }
+# }
+# END {
+#     for (gene in go_terms) {
+#         print gene > "'"$POPULATION_FILE"'"
+#         print gene, go_terms[gene] > "'"$ASSOCIATION_FILE"'"
+#     }
+# }
+# ' "$ANNOTATION"
 
-# Input GO annotation file for the full genome
-INPUT="$BAS_DIR/annotated_without_contam_gene_ontology_terms.tsv"
+### Step 2: Create per-inversion study files from named BEDs (all GO categories)
 
-# Output files for GOATOOLS
-POPULATION_FILE="$BAS_DIR/population.txt"      # List of all genes with biological_process GO terms
-ASSOCIATION_FILE="$BAS_DIR/association.txt"    # Gene-to-GO term mappings (biological_process only)
+# for BED in "$BAS_DIR"/inversions_*.bed; do
+#     BASENAME=$(basename "$BED")
+#     NAME=$(echo "$BASENAME" | sed -E 's/^inversions_([^.]*)\.bed$/\1/')
 
-# Parse the annotation file to build the population and association files
-awk '
-BEGIN {
-    FS="\t"; OFS="\t"
-}
-# Only keep rows with the biological_process category
-$4 == "biological Process" {
-    split($1, a, "|")
-    gene = a[1]
-    go = $2
-    if (gene != "" && go ~ /^GO:/)
-        map[gene] = (map[gene] ? map[gene] ";" go : go)
-}
-# Write out the gene and associated GO terms
-END {
-    for (gene in map) {
-        print gene > "'"$POPULATION_FILE"'"
-        print gene, map[gene] > "'"$ASSOCIATION_FILE"'"
-    }
-}
-' "$INPUT"
+#     GENE_ID_LIST="$BAS_DIR/gene_ids_${NAME}.txt"
+#     MATCHED_GENES="$BAS_DIR/study_${NAME}.txt"
 
-### Step 3: Run GOATOOLS to identify enriched GO terms in inversions ###
+#     echo "Processing $BED -> $MATCHED_GENES"
 
-# Run the GOATOOLS enrichment test
-# python3 /home/uqkmcla4/goatools/scripts/find_enrichment.py \
-# "$BAS_DIR"/study.txt \                        # Study set: genes in inversions
-# "$BAS_DIR"/population.txt \                  # Background gene set
-# "$BAS_DIR"/association.txt \                 # GO term associations
-# --obo /home/uqkmcla4/go-basic.obo \          # GO term definitions file
-# --outfile "$BAS_DIR"/go_enrichment_results.xlsx \  # Output Excel file
-# --pval 0.05 \                                 # P-value significance threshold
-# --method fdr_bh                               # Multiple testing correction method (FDR Benjamini-Hochberg)
+#     samtools view -L "$BED" "$BAM" | \
+#         awk '{print $1 "\t" $3 "\t" $4}' | \
+#         sort -k2,2 -k3,3n | uniq > "$GENE_ID_LIST"
+
+#     awk 'NR==FNR { ids[$1]; next }
+#     {
+#         split($1, parts, "|");
+#         if (parts[3] in ids) {
+#             split(parts[1], gene, ".");
+#             print gene[1] "." gene[2];
+#         }
+#     }' "$GENE_ID_LIST" "$ANNOTATION" | sort -u > "$MATCHED_GENES"
+
+#     echo "Done. Output written to $MATCHED_GENES"
+# done
+
+# ### Step 3: Create study files per inversion from coordinates in a single BED
+
+# BED="$BAS_DIR/inversions.bed"  # BED file with inversion coordinates
+
+# echo "Processing each inversion in $BED..."
+
+# while IFS=$'\t' read -r scaffold start end; do
+#     LABEL="${scaffold}_${start}_${end}"
+#     TMP_BED="$BAS_DIR/tmp_${LABEL}.bed"
+#     GENE_ID_LIST="$BAS_DIR/gene_ids_${LABEL}.txt"
+#     MATCHED_GENES="$BAS_DIR/study_${LABEL}.txt"
+
+#     echo -e "${scaffold}\t${start}\t${end}" > "$TMP_BED"
+
+#     echo "Processing inversion $LABEL"
+
+#     samtools view -L "$TMP_BED" "$BAM" | \
+#         awk '{print $1 "\t" $3 "\t" $4}' | \
+#         sort -k2,2 -k3,3n | uniq > "$GENE_ID_LIST"
+
+#     awk 'NR==FNR { ids[$1]; next }
+#     {
+#         split($1, parts, "|");
+#         if (parts[3] in ids) {
+#             split(parts[1], gene, ".");
+#             print gene[1] "." gene[2];
+#         }
+#     }' "$GENE_ID_LIST" "$ANNOTATION" | sort -u > "$MATCHED_GENES"
+
+#     echo "Done: $MATCHED_GENES"
+
+#     rm "$TMP_BED"
+# done < "$BED"
+
+
+### Step 4: Run GOATOOLS to identify enriched GO terms in inversions ###
+
+#Run the GOATOOLS enrichment test
+
+BAS_DIR="/QRISdata/Q6656/chapter_III/functional_enrichment"
+POPULATION_FILE="$BAS_DIR/population.txt"
+ASSOCIATION_FILE="$BAS_DIR/association_cleaned.txt"
+OBO="/home/uqkmcla4/go-basic.obo"
+OUTPUT_DIR="$BAS_DIR"
+
+for STUDY in "$BAS_DIR"/study_D*.txt; do
+    STUDY_BASENAME=$(basename "$STUDY")
+    LABEL=$(echo "$STUDY_BASENAME" | sed -E 's/^study[._]?([^.]*)\.txt$/\1/')
+
+    echo "Running GOATOOLS enrichment for $STUDY_BASENAME"
+
+    python3 /home/uqkmcla4/scripts/run_goea_by_ns.py \
+        "$STUDY" "$POPULATION_FILE" "$ASSOCIATION_FILE" "$OBO" "$LABEL" "$OUTPUT_DIR"
+done        

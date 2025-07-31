@@ -79,8 +79,8 @@ import os
 import pandas as pd
 from collections import defaultdict
 
-input_file = "/Users/kathleenmclay/Library/CloudStorage/GoogleDrive-mclay.kathleen@gmail.com/My Drive/PhD/ChIII_gene_flow/GEA /GEA_all/GEA_inversions_all/inversion_genotypes.txt"  # replace with actual file path
-output_dir = "/Users/kathleenmclay/Library/CloudStorage/GoogleDrive-mclay.kathleen@gmail.com/My Drive/PhD/ChIII_gene_flow/GEA /GEA_all/GEA_inversions_all"
+input_file = "/.../inversion_genotypes.txt"  # replace with actual file path
+output_dir = "/.../GEA_inversions_all"
 os.makedirs(output_dir, exist_ok=True)
 
 # Define populations and output column order

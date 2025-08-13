@@ -6,9 +6,9 @@ library(tidyr)
 library(gridExtra)
 library(grid)
 
-############ ANALYSIS OF BAYPASS OUTPUT ############
+# ---- GEA ANALYSIS ----
 
-### PART 1: Process Data ###
+# ---- PART 1: PROCESS DATA ----
 
 # Read inversion data
 inversion_data <- read.csv("GEA_inversions_consecutive.csv")
@@ -23,21 +23,28 @@ gea_dat$position <- gea_dat$position / 1000000
 gea_dat$scaffold <- str_replace(gea_dat$scaffold, "scaffold_([0-9]+)", function(x) {
   sprintf("scaffold_%02d", as.integer(str_extract(x, "[0-9]+")))
 })
-gea_dat <- gea_dat[order(gea_dat$COVARIABLE, gea_dat$scaffold, gea_dat$position),] #reorder the SNPs by scaffold and position
+# Reorder the SNPs by scaffold and position
+gea_dat <- gea_dat[order(gea_dat$COVARIABLE, gea_dat$scaffold, gea_dat$position),] 
 
 # Adjust the SNP positions so the results can be plotted consecutively for all scaffolds in one plot
 
-snps <- subset(gea_dat, COVARIABLE == 1)[, c("position", "scaffold")] # get a list of SNP positions 
-bp <- snps$position[snps$scaffold == "scaffold_01"] # make a new variable with all the positions from scaffold 1
-mid <- 0+max(bp)/2 # create a value that is the midpoint of scaffold 1
-scaffolds <- unique(snps$scaffold)
+# Get a list of SNP positions
+snps <- subset(gea_dat, COVARIABLE == 1)[, c("position", "scaffold")]  
 
+# Make a new variable with all the positions from scaffold 1
+bp <- snps$position[snps$scaffold == "scaffold_01"] 
+
+# Create a value that is the midpoint of scaffold 1 (mostly for plotting)
+mid <- 0+max(bp)/2 
+
+# Add the positions of scaffold 1 to the snps dataframe
+scaffolds <- unique(snps$scaffold)
 for (i in scaffolds[-1]) {
   max.now <- max(bp)
-  mid <- c(mid, max.now+max(snps$position[snps$scaffold == i])/2) # mid is for plotting, doesn't get added to gea_dat
+  mid <- c(mid, max.now+max(snps$position[snps$scaffold == i])/2) 
   bp <- c(bp, (snps$position[snps$scaffold == i] + max.now))
 }
-snps$con_pos <- bp #add the new positions to the snps dataframe
+snps$con_pos <- bp 
 
 # Add consecutive snp position to gea_dat
 gea_list <- list()
@@ -71,7 +78,8 @@ gea_dat <- gea_dat %>%
   ) %>%
   ungroup()
 
-### PART 2: Identify significant GEA SNPs ###
+
+# ---- PART 2: IDENTIFY GEA SNPS WITH SIGNIFICANT Bf.db SCORES ----
 
 # Create a new column that indicates if the SNP is significant for BF.db > 20
 gea_dat$significant_BF.dB <- ifelse(gea_dat$BF.dB. > 20, "TRUE", "FALSE")
@@ -84,9 +92,9 @@ pod_dat_thresh <- pod_dat %>% group_by(COVARIABLE) %>% summarise(pod_threshold =
 gea_dat <- gea_dat %>%
   left_join(pod_dat_thresh, by = "COVARIABLE") %>%
   mutate(significant_99th_POD = BF.dB. >= pod_threshold)
-gea_dat <- gea_dat %>% select(-pod_threshold) #remove the threshold column 
+gea_dat <- gea_dat %>% select(-pod_threshold) 
 
-### PART 3: Identify if significant GEA SNPs fall within inversions ###
+# ---- PART 3: IDENTIFY GEA SNPS WITH SIGNIFICANT Bf.db SCORES THAT FALL WITHIN INVERSIONS ----
 
 # Get significant SNP counts per inversion for each covariable 
 significant_snp_counts <- inversion_data %>%
@@ -124,11 +132,8 @@ snp_counts <- snp_counts %>%
     prop_cov_3_sig = snp_count_cov_3 / gea_summary$num_SNPs_BF.dB[gea_summary$COVARIABLE == 3],
 )
 
-### PART 4: Create a summary of the data ###
 
-
-
-
+# ---- PART 4: CREATE A SUMMARY OF THE SIGNFICANCE RESULTS ----
 
 # Create a summary of the data 
 gea_summary <- gea_dat %>%
@@ -155,7 +160,8 @@ gea_summary <- gea_dat %>%
     .groups = "drop"
   )
 
-### PART 5: Run permutation testing: random sampling of significant # SNPs within inversions ###
+
+# --- PART 5: PERMUTATION TESTING: ALL INVERSIONS ----
 
 # Initialize an empty tibble to store final permutation results
 prop_inv_perm <- tibble()
@@ -164,9 +170,9 @@ prop_inv_perm <- tibble()
 num_iterations <- 1000
 
 # Initialize lists to store results
-results_list <- list()  # For summary statistics
-counter <- 1  # Counter to keep track of list indices
-all_SNPs_out <- list()  # For detailed permutation results
+results_list <- list()  
+counter <- 1  
+all_SNPs_out <- list()  
 
 # Loop through each environmental covariable in the GEA results
 for (u in unique(gea_summary$COVARIABLE)) {
@@ -189,7 +195,6 @@ for (u in unique(gea_summary$COVARIABLE)) {
     print(paste("permutation no ", i))
     
     # Initialize counter for SNPs found within inversions
-    
     snp_count <- 0
     
     # Filter data for the current covariable
@@ -254,20 +259,111 @@ gea_summary <- gea_summary %>%
 # Combine all detailed permutation results into a single dataframe
 final_SNPs_out <- bind_rows(all_SNPs_out)
 
-### PART 6: Write results to files ###
-
 # Write detailed permutation results to file
 write.table(final_SNPs_out, "permutation_SNPs_out.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
 
 # Write summary results to file 
 write.table(gea_summary, "GEA_summary.tsv", sep = "\t", row.names = FALSE)
+
 # Save gea_dat with significant SNPs + inversion status 
 write.table(gea_dat, "positions_all_soilGEA_summary_betai_reg_SIG_INV.out", sep = "\t", row.names = FALSE, quote = FALSE)
 
 # Save SNP counts to file
 write.table(snp_counts, "per_inversion_sig_SNPS.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
 
-### PART 7: Plotting ###
+
+# ---- PART 6: PERMUTATION TESTING: PER INVERSION ----
+
+set.seed(123) 
+
+# Number of permutations to generate null distributions
+num_iterations <- 1000
+# Initialize list to collect results across all inversions and covariables
+inversion_enrichment_results <- list()
+
+# Loop over each environmental covariable (e.g., PC1, PC2, etc.)
+for (cov in unique(gea_dat$COVARIABLE)) {
+  
+  message("Processing covariable: ", cov)
+  
+  # Subset gea_dat to the current covariable
+  gea_cov <- gea_dat %>%
+    filter(COVARIABLE == cov)
+  
+  # Extract the significant SNPs (based on BF.dB > 20) for this covariable
+  sig_snps_cov <- gea_cov %>%
+    filter(significant_BF.dB == TRUE)
+  
+  # Total number of significant SNPs to use in each permutation
+  n_sig <- nrow(sig_snps_cov)
+  
+  # Loop over each inversion in the dataset
+  for (i in 1:nrow(inversion_data)) {
+    
+    # Extract current inversion row
+    inv <- inversion_data[i, ]
+    
+    # Generate a unique inversion identifier
+    inv_name <- paste(inv$scaffold, inv$start, inv$end, sep = "_")
+    
+    # Count how many significant SNPs fall within this inversion
+    k_obs <- sig_snps_cov %>%
+      filter(
+        scaffold == inv$scaffold,
+        position >= inv$start,
+        position <= inv$end
+      ) %>%
+      nrow()
+    
+    ### Permutation Test ###
+    
+    # Generate a null distribution: how many SNPs *would* fall in this inversion if we randomly sampled
+    # significant SNPs across the genome
+    
+    k_perm <- replicate(num_iterations, {
+      # Randomly sample n_sig SNPs from the full SNP set (regardless of significance)
+      sampled_snps <- gea_cov %>% slice_sample(n = n_sig)
+      
+      # Count how many of the sampled SNPs fall within the current inversion
+      sampled_snps %>%
+        filter(
+          scaffold == inv$scaffold,
+          position >= inv$start,
+          position <= inv$end
+        ) %>%
+        nrow()
+    })
+    
+    # Calculate the one-tailed empirical p-value:
+    # probability of observing k_obs or more SNPs in the inversion under the null distribution
+    p_value <- mean(k_perm >= k_obs)
+    
+    # create dataframe to store results for this inversion and covariable
+    inversion_enrichment_results[[length(inversion_enrichment_results) + 1]] <- tibble(
+      inversion = inv_name,
+      covariable = cov,
+      observed = k_obs,
+      num_perm_ge_obs = sum(k_perm >= k_obs),
+      p_value = p_value
+    )
+  }
+}
+
+# Combine all results into one dataframe
+inversion_enrichment_results_df <- bind_rows(inversion_enrichment_results)
+
+inversion_enrichment_results_df <- inversion_enrichment_results_df %>%
+  mutate(p_value = formatC(p_value, format = "f", digits = 10)) 
+
+# Adjust p-values for multiple testing using FDR
+inversion_enrichment_results_df <- inversion_enrichment_results_df %>%
+  mutate(p_adj = p.adjust(p_value, method = "fdr"),
+         significant = p_adj < 0.05)
+
+# Save permutations per inversion results
+write.table(inversion_enrichment_results_df, "GEA_per_inversion_enrichment.tsv", sep = "\t", row.names = FALSE, quote = FALSE)
+
+# ---- PART 7: GEA MANHATTEN PLOT ----
 
 # Manhatten Plot with GEA data and inversions
 for (i in unique(gea_dat$COVARIABLE)) {
@@ -311,7 +407,7 @@ for (i in unique(gea_dat$COVARIABLE)) {
   )
 }
 
-### PART 8: Allele frequencies ###
+# ---- PART 8: CALCULATE WEIGHTED ALLELE FREQUENCIES FOR INVERSIONS ----
 
 # Create a dataframe of just signficant SNPs within inversions 
 gea_dat_sig_inv <- gea_dat %>%
@@ -399,7 +495,7 @@ allele_freqs_long <- weighted_freqs %>%
   )
 
 # Read in the environmental data 
-env_data <- read.csv("/Users/kathleenmclay/Library/CloudStorage/GoogleDrive-mclay.kathleen@gmail.com/My Drive/PhD/ChIII_gene_flow/2_soil_pca/PCA_soil_data_names.csv")
+env_data <- read.csv("PCA_soil_data_names.csv")
 env_data <- env_data[1:3,]
 colnames(env_data)[1] <- "covariable"  
 env_data$covariable <- gsub("PC", "", env_data$covariable) 
